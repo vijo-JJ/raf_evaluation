@@ -24,13 +24,13 @@
  ******************************************************************************/
 
 
-define(['N/email', 'N/render', 'N/search'],
+define(['N/email', 'N/render', 'N/search','N/record'],
     /**
  * @param{email} email
  * @param{render} render
  * @param{search} search
  */
-    (email, render, search) => {
+    (email, render, search,record) => {
         /**
          * Defines the function that is executed at the beginning of the map/reduce process and generates the input data.
          * @param {Object} inputContext
@@ -179,20 +179,34 @@ define(['N/email', 'N/render', 'N/search'],
             try{
                 let pdfArray = [];
                 let htmlBody = '';
-                setHtmlBody(htmlBody)
-                reduceContext.values.forEach(value => {
-                    let data = JSON.parse(value);
-                    pdfCreation(pdfArray,data)
-                    tableCreation(data,htmlBody)
-                });
-                htmlBody += '</table>';
-                 
+                let emailSent = custEmailSent(reduceContext.key) 
+                let today = new Date();
+                let daysDifference = 0;
+                if (!emailSent) {
+                    daysDifference = 999;
+                }
+                else{
+                    daysDifference = Math.floor((today - new Date(emailSent))/ (1000 * 60 * 60 * 24));
+                }
                 
-                log.debug({
-                    title:"html",
-                    details:htmlBody
-                });
-                sendEmail(pdfArray,reduceContext,htmlBody)
+                if (daysDifference > 7){
+                    htmlBody = setHtmlBody(htmlBody)
+                    reduceContext.values.forEach(value => {
+                        let data = JSON.parse(value);
+                        pdfCreation(pdfArray,data)
+                        htmlBody = tableCreation(data,htmlBody)
+                    });
+                    htmlBody += '</table>';
+                    
+                    
+                    // log.debug({
+                    //     title:"html",
+                    //     details:htmlBody
+                    // });
+                    sendEmail(pdfArray,reduceContext,htmlBody)
+                    submitDate(today,reduceContext.key)
+                }
+                
 
             }
             catch(e){
@@ -211,12 +225,12 @@ define(['N/email', 'N/render', 'N/search'],
         function pdfCreation(pdfArray,data){
             
 
-                let pdfFile = render.transaction({
-                    entityId: Number(data.internalId),
-                    printMode: render.PrintMode.PDF,
-                    inCustLocale: true
-                    });
-                pdfArray.push(pdfFile)
+            let pdfFile = render.transaction({
+                entityId: Number(data.internalId),
+                printMode: render.PrintMode.PDF,
+                inCustLocale: true
+                });
+            pdfArray.push(pdfFile)
             
         }
 
@@ -230,6 +244,7 @@ define(['N/email', 'N/render', 'N/search'],
             htmlBody += ' <td>' + data.daysOverdue + '</td>';
             htmlBody += ' <td>' + data.totalAmount + '</td>';
             htmlBody += '</tr>';
+            return htmlBody;
             
         }
 
@@ -259,6 +274,26 @@ define(['N/email', 'N/render', 'N/search'],
             htmlBody += ' <td> Days Overdue </td>';
             htmlBody += ' <td> Total Amount </td>';
             htmlBody += '</tr>';
+            return htmlBody
+        }
+
+        function custEmailSent(key){
+            let fieldLookUp = search.lookupFields({
+                type: search.Type.CUSTOMER,
+                id: key,
+                columns: ['custentity_jj_email_sent']
+            });
+            return fieldLookUp.custentity_jj_email_sent
+        }
+
+        function submitDate(today,key){
+            record.submitFields({
+                type: 'customer',
+                id: key,
+                values: {
+                    'custentity_jj_email_sent': today
+                }
+            });
         }
 
 
@@ -292,3 +327,4 @@ define(['N/email', 'N/render', 'N/search'],
         return {getInputData, map, reduce, summarize}
 
     });
+
